@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Controle de Caixa</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<style>
+
+*{
+box-sizing:border-box;
+font-family:system-ui;
+}
+
+body{
+margin:0;
+padding:15px;
+background:linear-gradient(135deg,#0f172a,#1e293b);
+}
+
+h1{
+color:white;
+text-align:center;
+}
+
+.card{
+background:white;
+padding:18px;
+border-radius:15px;
+margin-bottom:15px;
+box-shadow:0 10px 25px rgba(0,0,0,0.2);
+}
+
+input,select{
+width:100%;
+padding:12px;
+margin-top:8px;
+margin-bottom:10px;
+border-radius:8px;
+border:1px solid #ccc;
+font-size:16px;
+}
+
+button{
+width:100%;
+padding:12px;
+border:none;
+border-radius:10px;
+font-weight:bold;
+cursor:pointer;
+margin-top:6px;
+}
+
+.btn-azul{background:#2563eb;color:white;}
+.btn-verde{background:#16a34a;color:white;}
+.btn-vermelho{background:#dc2626;color:white;}
+.btn-whats{background:#25d366;color:white;}
+
+.cliente{
+border:1px solid #eee;
+border-radius:12px;
+padding:12px;
+margin-top:10px;
+}
+
+.cliente-topo{
+display:flex;
+justify-content:space-between;
+font-weight:bold;
+font-size:16px;
+}
+
+.barra{
+height:10px;
+background:#eee;
+border-radius:10px;
+margin-top:6px;
+overflow:hidden;
+}
+
+.barra-uso{
+height:10px;
+}
+
+.acoes{
+display:flex;
+gap:6px;
+margin-top:8px;
+}
+
+.acoes button{
+flex:1;
+padding:8px;
+font-size:13px;
+}
+
+.saldo{
+font-size:22px;
+font-weight:bold;
+text-align:center;
+color:#16a34a;
+}
+
+table{
+width:100%;
+margin-top:10px;
+border-collapse:collapse;
+}
+
+th,td{
+padding:8px;
+border-bottom:1px solid #ddd;
+font-size:14px;
+text-align:center;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<h1>💰 Controle de Caixa</h1>
+
+<div class="card">
+
+<div class="saldo" id="saldoCaixa">
+Saldo do Caixa Hoje: R$ 0,00
+</div>
+
+<button class="btn-azul" onclick="exportarPDF()">
+Exportar Histórico PDF
+</button>
+
+<button class="btn-vermelho" onclick="limparHistorico()">
+Excluir Todo Histórico
+</button>
+
+</div>
+
+<div class="card">
+
+<h3>Cadastrar Cliente</h3>
+
+<input id="nome" placeholder="Nome do cliente">
+
+<input id="telefone" placeholder="Telefone (DDD + número)">
+
+<input id="limite" type="number" placeholder="Limite">
+
+<button class="btn-verde" onclick="cadastrarCliente()">
+Cadastrar
+</button>
+
+</div>
+
+<div class="card">
+
+<h3>Clientes</h3>
+
+<div id="listaClientes"></div>
+
+</div>
+
+<div class="card" id="areaConta" style="display:none">
+
+<h3 id="nomeConta"></h3>
+
+<select id="tipo">
+<option value="compra">Compra</option>
+<option value="pagamento">Pagamento</option>
+</select>
+
+<input id="valor" type="number" placeholder="Valor">
+
+<button class="btn-verde" onclick="registrar()">
+Registrar
+</button>
+
+<h3>Histórico</h3>
+
+<table>
+
+<thead>
+<tr>
+<th>Data</th>
+<th>Tipo</th>
+<th>Valor</th>
+<th>Ação</th>
+</tr>
+</thead>
+
+<tbody id="historico"></tbody>
+
+</table>
+
+</div>
+
+<script>
+
+let clientes = JSON.parse(localStorage.getItem("clientes")) || []
+let historico = JSON.parse(localStorage.getItem("historico")) || []
+let clienteAtual = null
+
+function salvar(){
+
+localStorage.setItem("clientes",JSON.stringify(clientes))
+localStorage.setItem("historico",JSON.stringify(historico))
+
+}
+
+function dinheiro(valor){
+
+return valor.toLocaleString("pt-BR",{style:"currency",currency:"BRL"})
+
+}
+
+function cadastrarCliente(){
+
+let nome=document.getElementById("nome").value.trim()
+let telefone=document.getElementById("telefone").value.replace(/\D/g,'')
+let limite=Number(document.getElementById("limite").value)
+
+if(nome==="" || telefone==="" || limite<=0){
+alert("Preencha todos os campos corretamente")
+return
+}
+
+if(!telefone.startsWith("55")){
+telefone="55"+telefone
+}
+
+telefone="+"+telefone
+
+clientes.push({
+nome,
+telefone,
+limite,
+consumo:0
+})
+
+salvar()
+atualizarClientes()
+
+document.getElementById("nome").value=""
+document.getElementById("telefone").value=""
+document.getElementById("limite").value=""
+
+}
+
+function atualizarClientes(){
+
+let lista=document.getElementById("listaClientes")
+lista.innerHTML=""
+
+clientes.forEach((c,i)=>{
+
+let disponivel=c.limite-c.consumo
+let porcentagem=(c.consumo/c.limite)*100
+
+let cor="#16a34a"
+
+if(porcentagem>70) cor="#f59e0b"
+if(porcentagem>90) cor="#dc2626"
+
+lista.innerHTML+=`
+
+<div class="cliente">
+
+<div class="cliente-topo">
+<span>${c.nome}</span>
+<span>${dinheiro(disponivel)}</span>
+</div>
+
+<div>Telefone: ${c.telefone}</div>
+<div>Limite: ${dinheiro(c.limite)}</div>
+<div>Consumido: ${dinheiro(c.consumo)}</div>
+
+<div class="barra">
+<div class="barra-uso" style="width:${porcentagem}%;background:${cor}"></div>
+</div>
+
+<div class="acoes">
+
+<button class="btn-azul" onclick="abrirConta(${i})">
+Conta
+</button>
+
+<button class="btn-whats" onclick="abrirWhats(${i})">
+WhatsApp
+</button>
+
+<button class="btn-verde" onclick="editarCliente(${i})">
+Editar
+</button>
+
+<button class="btn-vermelho" onclick="excluirCliente(${i})">
+Excluir
+</button>
+
+</div>
+
+</div>
+
+`
+
+})
+
+}
+
+function abrirWhats(i){
+
+let c = clientes[i]
+
+window.open(`https://wa.me/${c.telefone.replace("+","")}`, "_blank")
+
+}
+
+function abrirConta(i){
+
+clienteAtual=i
+
+document.getElementById("areaConta").style.display="block"
+
+let c=clientes[i]
+
+let disponivel=c.limite-c.consumo
+
+document.getElementById("nomeConta").innerText=
+c.nome+" | Disponível: "+dinheiro(disponivel)
+
+mostrarHistorico()
+
+}
+
+function registrar(){
+
+let valor=parseFloat(document.getElementById("valor").value)
+
+if(!valor || valor<=0){
+alert("Digite um valor válido")
+return
+}
+
+let tipo=document.getElementById("tipo").value
+let c=clientes[clienteAtual]
+
+if(tipo=="compra"){
+
+if(c.consumo+valor>c.limite)
+return alert("Limite ultrapassado")
+
+c.consumo+=valor
+
+}else{
+
+c.consumo-=valor
+if(c.consumo<0) c.consumo=0
+
+}
+
+historico.push({
+cliente:c.nome,
+tipo,
+valor,
+data:new Date().toLocaleString()
+})
+
+document.getElementById("valor").value=""
+
+salvar()
+
+mostrarHistorico()
+atualizarClientes()
+calcularCaixa()
+
+}
+
+function mostrarHistorico(){
+
+let tabela=document.getElementById("historico")
+tabela.innerHTML=""
+
+historico.forEach((h,i)=>{
+
+if(h.cliente==clientes[clienteAtual].nome){
+
+tabela.innerHTML+=`
+
+<tr>
+<td>${h.data}</td>
+<td>${h.tipo}</td>
+<td>${dinheiro(h.valor)}</td>
+
+<td>
+<button class="btn-vermelho" onclick="excluirRegistro(${i})">
+Excluir
+</button>
+</td>
+
+</tr>
+
+`
+
+}
+
+})
+
+}
+
+function excluirRegistro(i){
+
+let h=historico[i]
+
+let cliente=clientes.find(c=>c.nome===h.cliente)
+
+if(cliente){
+
+if(h.tipo==="compra") cliente.consumo-=h.valor
+if(h.tipo==="pagamento") cliente.consumo+=h.valor
+
+if(cliente.consumo<0) cliente.consumo=0
+
+}
+
+historico.splice(i,1)
+
+salvar()
+mostrarHistorico()
+atualizarClientes()
+calcularCaixa()
+
+}
+
+function excluirCliente(i){
+
+if(confirm("Excluir cliente?")){
+
+clientes.splice(i,1)
+
+salvar()
+atualizarClientes()
+
+}
+
+}
+
+function editarCliente(i){
+
+let nome=prompt("Nome",clientes[i].nome)
+let telefone=prompt("Telefone",clientes[i].telefone)
+let limite=prompt("Limite",clientes[i].limite)
+
+telefone=telefone.replace(/\D/g,'')
+
+if(!telefone.startsWith("55")){
+telefone="55"+telefone
+}
+
+clientes[i].nome=nome
+clientes[i].telefone="+"+telefone
+clientes[i].limite=parseFloat(limite)
+
+salvar()
+atualizarClientes()
+
+}
+
+function calcularCaixa(){
+
+let total=0
+let hoje=new Date().toLocaleDateString()
+
+historico.forEach(h=>{
+
+if(h.tipo=="pagamento" && h.data.includes(hoje))
+total+=h.valor
+
+})
+
+document.getElementById("saldoCaixa").innerText=
+"Saldo do Caixa Hoje: "+dinheiro(total)
+
+}
+
+function limparHistorico(){
+
+if(confirm("Excluir histórico?")){
+
+historico=[]
+
+salvar()
+
+mostrarHistorico()
+calcularCaixa()
+
+}
+
+}
+
+function exportarPDF(){
+
+const {jsPDF}=window.jspdf
+
+let doc=new jsPDF()
+
+doc.text("Histórico de Caixa",10,10)
+
+let y=20
+
+historico.forEach(h=>{
+
+doc.text(`${h.data} - ${h.cliente} - ${h.tipo} - ${dinheiro(h.valor)}`,10,y)
+
+y+=8
+
+})
+
+doc.save("historico.pdf")
+
+}
+
+atualizarClientes()
+calcularCaixa()
+
+</script>
+
+</body>
+</html>
